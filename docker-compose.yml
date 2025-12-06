@@ -1,0 +1,37 @@
+services:
+  db:
+    image: postgres:16
+    container_name: captive_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: portalPortal
+      POSTGRES_PASSWORD: portalPortal123
+      POSTGRES_DB: captive_portal
+    volumes:
+      - ./db_data:/var/lib/postgresql/data:Z
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U portalPortal -d captive_portal"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    container_name: captive_app
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    build:
+      context: .
+    ports:
+      - "80:80"
+    environment:
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_USER: portalPortal
+      DB_PASS: portalPortal123
+      DB_NAME: captive_portal
+    volumes:
+      - ./exports:/app/exports:Z          # para CSV
+      - ./config.ini:/app/config.ini:roZ # config real
+      - ./logs:/app/logs:Z                # logs del portal
