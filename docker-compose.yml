@@ -32,6 +32,6 @@ services:
       DB_PASS: portalPortal123
       DB_NAME: captive_portal
     volumes:
-      - ./exports:/app/exports:Z          # para CSV
-      - ./config.ini:/app/config.ini:roZ # config real
-      - ./logs:/app/logs:Z                # logs del portal
+      - ./exports:/app/exports:Z          # Montar acá destino final de las tablas, mount here tables final destination
+      - ./config.ini:/app/config.ini:roZ # config 
+      - ./logs:/app/logs:Z                # logs 
