@@ -1,5 +1,5 @@
 # ------------------------------------------------------
-# IMPORTS PRINCIPALES (NO IMPORTES NADA LOCAL TODAVÍA)
+# IMPORTS PRINCIPALES
 # ------------------------------------------------------
 import asyncio
 from fastapi import FastAPI, Request, Form, Depends, HTTPException
@@ -113,7 +113,7 @@ def check_admin(credentials: HTTPBasicCredentials = Depends(security)):
 
 
 # ------------------------------------------------------
-# VALIDACIÓN EMAIL (igual que antes)
+# VALIDACIÓN EMAIL
 # ------------------------------------------------------
 import re
 
@@ -180,7 +180,7 @@ async def index_post(
         url = app.url_path_for("index") + "?status=error"
         return RedirectResponse(url=url, status_code=HTTP_302_FOUND)
 
-    # 2) Autorizar en Unifi (microservicio interno)
+    # 2) Autorizar en Unifi
     ok_unifi = False
     try:
         ok_unifi = await asyncio.to_thread(
@@ -199,7 +199,7 @@ async def index_post(
 
 
 # ------------------------------------------------------
-# RUTAS DE CAPTIVE PORTAL UNIFI (igual que antes)
+# RUTAS DE CAPTIVE PORTAL UNIFI
 # ------------------------------------------------------
 @app.get("/guest/s/{site}/")
 async def guest_redirect_site(site: str, request: Request):
@@ -281,9 +281,37 @@ async def test_unifi(mac: str = ""):
             "authorized": False,
             "error": str(e)
         }
+from fastapi.responses import Response
 
 # ------------------------------------------------------
-# MAIN (solo si corres python main.py)
+# RUTAS PARA COMPATIBILIDAD PORTAL CAUTIVO
+# ------------------------------------------------------
+
+@app.get("/generate_204")
+@app.get("/generate_204/")   # por las dudas
+async def android_generate_204():
+    return Response("", status_code=204)
+
+@app.get("/hotspot-detect.html")
+async def apple_hotspot_detect():
+    # iOS a veces interpreta 200 OK HTML como portal
+    return Response("", status_code=204)
+
+@app.get("/connecttest.txt")
+async def windows_connecttest():
+    return Response("", status_code=204)
+
+@app.get("/ncsi.txt")
+async def windows_ncsi():
+    return Response("", status_code=204)
+
+@app.get("/fwlink")
+async def windows_fwlink():
+    # Windows redirige acá cuando detecta cpt portal
+    return Response("", status_code=204)
+
+# ------------------------------------------------------
+# MAIN
 # ------------------------------------------------------
 if __name__ == "__main__":
     import uvicorn
