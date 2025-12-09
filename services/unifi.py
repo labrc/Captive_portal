@@ -3,6 +3,8 @@ from datetime import datetime
 import configparser
 import requests
 from requests.packages.urllib3.exceptions import InsecureRequestWarning
+import time
+
 
 # ------------------------------------------------------
 # CONFIG
@@ -39,6 +41,16 @@ def log_error(msg: str):
 session2 = requests.Session()
 session2.verify = False
 session2_csrf = None
+def _post_retry(session, url, payload, headers=None, retries=2):
+    """POST con retry + backoff para máxima estabilidad."""
+    for attempt in range(retries + 1):
+        try:
+            r = session.post(url, json=payload, headers=headers, timeout=4)
+            return r
+        except Exception as e:
+            log_error(f"[MODELO2] Error POST intento {attempt+1}/{retries+1}: {e}")
+            time.sleep(0.4)  # backoff suave
+    return None
 
 
 def modelo2_login(ctrl, user, pwd):
@@ -48,7 +60,12 @@ def modelo2_login(ctrl, user, pwd):
     payload = {"username": user, "password": pwd}
 
     log_info(f"[MODELO2] LOGIN → {login_url}")
-    r = session2.post(login_url, json=payload)
+    r = _post_retry(session2, login_url, payload)
+
+    if not r:
+        log_error("[MODELO2] Login FAIL: sin respuesta del controlador")
+        return False
+
     if r.status_code != 200:
         log_error(f"[MODELO2] Login FAIL: {r.status_code} {r.text[:200]}")
         return False
@@ -67,8 +84,14 @@ def modelo2_unauthorize(ctrl, site, mac):
     headers = {"X-Csrf-Token": session2_csrf}
     payload = {"cmd": "unauthorize-guest", "mac": mac}
 
-    r = session2.post(url, json=payload, headers=headers)
-    log_info(f"[MODELO2] UNAUTH → {r.status_code} {r.text[:200]}")
+    r = _post_retry(session2, url, payload, headers=headers)
+
+    if not r:
+        log_error("[MODELO2] UNAUTH falló sin respuesta")
+        return False
+
+    log_info(f"[MODELO2] UNAUTH → {r.status_code}")
+
     return True
 
 
@@ -79,7 +102,10 @@ def modelo2_authorize(ctrl, site, mac, minutes):
     headers = {"X-Csrf-Token": session2_csrf}
     payload = {"cmd": "authorize-guest", "mac": mac, "minutes": minutes}
 
-    r = session2.post(url, json=payload, headers=headers)
+    r = _post_retry(session2, url, payload, headers=headers)
+    if not r:
+        log_error("[MODELO2] AUTH sin respuesta del UDM")
+        return False
 
     if r.status_code in (401, 403):
         log_error("[MODELO2] Sesión expirada → Re-login")
@@ -94,7 +120,11 @@ def modelo2_authorize(ctrl, site, mac, minutes):
             return False
 
         headers["X-Csrf-Token"] = session2_csrf
-        r = session2.post(url, json=payload, headers=headers)
+        r = _post_retry(session2, url, payload, headers=headers)
+        
+        if not r:
+            log_error("[MODELO2] AUTH reintento sin respuesta")
+            return False
 
     log_info(f"[MODELO2] AUTH → {r.status_code} {r.text[:200]}")
     return r.status_code == 200
@@ -106,6 +136,8 @@ def unifi_udm_modelo2(mac, minutes, ctrl, site, user, pwd):
             return False
     modelo2_unauthorize(ctrl, site, mac)
     return modelo2_authorize(ctrl, site, mac, minutes)
+
+
 
 # ------------------------------------------------------
 # MODELO 3 — LDocker
@@ -128,7 +160,7 @@ def modelo3_login(ctrl, user, pwd):
     login_url = f"{ctrl}/api/login"
     log_info(f"[MODELO3] LOGIN → {login_url}")
 
-    r = session3.post(login_url, json={"username": user, "password": pwd})
+    r = session3.post(login_url, json={"username": user, "password": pwd}, timeout=4)
 
     if r.status_code != 200:
         log_error(f"[MODELO3] Login FAIL {r.status_code} {r.text[:200]}")
@@ -149,7 +181,7 @@ def modelo3_unauthorize(ctrl, site, mac):
     headers = {"X-CSRF-Token": session3_csrf}
     payload = {"cmd": "unauthorize-guest", "mac": mac}
 
-    r = session3.post(url, json=payload, headers=headers)
+    r = session3.post(url, json=payload, headers=headers, timeout=4)
     log_info(f"[MODELO3] UNAUTH → {r.status_code} {r.text[:200]}")
     return True
 
@@ -159,7 +191,7 @@ def modelo3_authorize(ctrl, site, mac, minutes):
     headers = {"X-CSRF-Token": session3_csrf}
     payload = {"cmd": "authorize-guest", "mac": mac, "minutes": minutes}
 
-    r = session3.post(url, json=payload, headers=headers)
+    r = session3.post(url, json=payload, headers=headers, timeout=4)
     log_info(f"[MODELO3] AUTH → {r.status_code} {r.text[:200]}")
     return r.status_code == 200
 
@@ -188,7 +220,7 @@ def modelo4_login(ctrl, user, pwd):
         return True
 
     login_url = f"{ctrl}/api/auth/login"
-    r = session4.post(login_url, json={"username": user, "password": pwd})
+    r = session4.post(login_url, json={"username": user, "password": pwd}, timeout=4)
 
     if r.status_code != 200:
         log_error(f"[MODELO4] Login FAIL {r.status_code} {r.text[:200]}")
@@ -205,7 +237,7 @@ def modelo4_unauthorize(ctrl, site, mac):
     url = f"{ctrl}/proxy/network/api/s/{site}/cmd/stamgr"
     headers = {"X-Csrf-Token": session4_csrf}
     payload = {"cmd": "unauthorize-guest", "mac": mac}
-    r = session4.post(url, json=payload, headers=headers)
+    r = session4.post(url, json=payload, headers=headers, timeout=4)
     log_info(f"[MODELO4] UNAUTH → {r.status_code}")
     return True
 
@@ -214,7 +246,7 @@ def modelo4_authorize(ctrl, site, mac, minutes):
     url = f"{ctrl}/proxy/network/api/s/{site}/cmd/stamgr"
     headers = {"X-Csrf-Token": session4_csrf}
     payload = {"cmd": "authorize-guest", "mac": mac, "minutes": minutes}
-    r = session4.post(url, json=payload, headers=headers)
+    r = session4.post(url, json=payload, headers=headers, timeout=4)
     log_info(f"[MODELO4] AUTH → {r.status_code}")
     return r.status_code == 200
 
