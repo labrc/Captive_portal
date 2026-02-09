@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Acceso Wi-Fi</title>
+    <link href="{{ request.url_for('static', path='tw.css') }}" rel="stylesheet">
+
+</head>
+<body class="bg-gradient-to-tr from-red-200 via-blue-300 to-sky-300 min-h-screen flex items-center justify-center">
+  <div class="w-full max-w-sm p-6 bg-white rounded-2xl shadow">
+    <div class="flex justify-center mb-4">
+      <img src="{{ request.url_for('static', path=logo_file) }}" alt="Logo {{ hotel_name }}" class="w-64 h-64 object-contain">
+
+
+    </div>
+
+    <!-- Selector de idioma -->
+    <div class="flex justify-center space-x-4 mb-4">
+      <button class="lang-btn" data-lang="es">🇦🇷</button>
+      <button class="lang-btn" data-lang="pt">🇧🇷</button>
+      <button class="lang-btn" data-lang="en">🇺🇸</button>
+    </div>
+{% if status == "success" %}
+<script>
+  const TARGET = "{{ redirect_url }}";
+  window.close();
+  window.location.href = TARGET;
+  setTimeout(() => { window.location.replace(TARGET); }, 500);
+</script>
+{% endif %}
+
+
+    <form method="post" class="space-y-4">
+      <div>
+        <label class="block text-sm" id="label-name">Nombre completo</label>
+        <input name="fullname" required class="w-full rounded border p-2" placeholder="Ej: Juan Pérez" id="input-name">
+      </div>
+
+      <div>
+        <label class="block text-sm" id="label-email">Email</label>
+        <input name="email" type="email" required class="w-full rounded border p-2" placeholder="ejemplo@correo.com" id="input-email">
+      </div>
+
+      <div>
+        <label class="block text-sm" id="label-phone">Teléfono (opcional)</label>
+        <input name="phone" class="w-full rounded border p-2" placeholder="+54 9 11 1234 5678" id="input-phone">
+      </div>
+
+      <button class="w-full py-2 rounded bg-blue-600 text-white" type="submit" id="btn-submit">
+        Conectarse al Wi-Fi
+      </button>
+    </form>
+  </div>
+
+  <script>
+    const texts = {
+      es: {
+        name: "Nombre completo",
+        email: "Email",
+        phone: "Teléfono",
+        placeholderName: "Ej: Juan Pérez",
+        placeholderEmail: "ejemplo@correo.com",
+        placeholderPhone: "+54 9 11 1234 5678",
+        submit: "Conectar",
+        success: "Acceso concedido. ¡Bienvenido!",
+        error: "Por favor, ingrese nombre y email válidos."
+      },
+      pt: {
+        name: "Nome completo",
+        email: "Email",
+        phone: "Telefone",
+        placeholderName: "Ex: João Silva",
+        placeholderEmail: "exemplo@email.com",
+        placeholderPhone: "+55 11 91234-5678",
+        submit: "Conectar",
+        success: "Acesso concedido. Bem-vindo!",
+        error: "Por favor, insira nome e email válidos."
+      },
+      en: {
+        name: "Full Name",
+        email: "Email",
+        phone: "Phone",
+        placeholderName: "Ex: John Doe",
+        placeholderEmail: "example@email.com",
+        placeholderPhone: "+1 123-456-7890",
+        submit: "Connect",
+        success: "Access granted. Welcome!",
+        error: "Please enter a valid name and email."
+      }
+    };
+
+    function setLanguage(lang) {
+      document.getElementById('label-name').textContent = texts[lang].name;
+      document.getElementById('label-email').textContent = texts[lang].email;
+      document.getElementById('label-phone').textContent = texts[lang].phone;
+      document.getElementById('input-name').placeholder = texts[lang].placeholderName;
+      document.getElementById('input-email').placeholder = texts[lang].placeholderEmail;
+      document.getElementById('input-phone').placeholder = texts[lang].placeholderPhone;
+      document.getElementById('btn-submit').textContent = texts[lang].submit;
+      localStorage.setItem('lang', lang);
+    }
+
+    // Detectar idioma guardado
+    const savedLang = localStorage.getItem('lang') || 'es';
+    setLanguage(savedLang);
+
+    // Mostrar mensaje localizado si existe
+    const flashSuccess = document.getElementById('success-text');
+    const flashError = document.getElementById('error-text');
+    if (flashSuccess) flashSuccess.textContent = texts[savedLang].success;
+    if (flashError) flashError.textContent = texts[savedLang].error;
+
+    // Eventos para los botones
+    document.querySelectorAll('.lang-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        setLanguage(btn.dataset.lang);
+      });
+    });
+  </script>
+<script>
+  // Crear cartel "Conectando..."
+  const connectingDiv = document.createElement("div");
+  connectingDiv.id = "connecting-overlay";
+  connectingDiv.style.position = "fixed";
+  connectingDiv.style.top = "0";
+  connectingDiv.style.left = "0";
+  connectingDiv.style.width = "100%";
+  connectingDiv.style.height = "100%";
+  connectingDiv.style.background = "rgba(0,0,0,0.6)";
+  connectingDiv.style.color = "white";
+  connectingDiv.style.display = "flex";
+  connectingDiv.style.fontSize = "2rem";
+  connectingDiv.style.fontWeight = "bold";
+  connectingDiv.style.justifyContent = "center";
+  connectingDiv.style.alignItems = "center";
+  connectingDiv.style.zIndex = "9999";
+  connectingDiv.style.backdropFilter = "blur(3px)";
+  connectingDiv.style.display = "none"; // oculto por defecto
+  document.body.appendChild(connectingDiv);
+
+  // Texto por idioma
+  const connectingText = {
+    es: "CONECTANDO...",
+    pt: "CONECTANDO...",
+    en: "CONNECTING..."
+  };
+
+  // Mostrar mensaje al enviar + llamar al 204
+  const form = document.querySelector("form");
+  form.addEventListener("submit", () => {
+    const lang = localStorage.getItem('lang') || 'es';
+
+    // Mostrar cartel
+    connectingDiv.textContent = connectingText[lang];
+    connectingDiv.style.display = "flex";
+
+    // 👉 Pedir al backend que envíe 204 vacío
+    fetch("/generate_204", { method: "GET" })
+      .then(() => {
+        // Android debería cerrar aquí
+      })
+      .catch(() => {
+        // Ignorar errores
+      });
+  });
+</script>
+
+</body>
+</html>

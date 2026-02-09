@@ -14,8 +14,6 @@ COPY database.py /app/database.py
 COPY templates/ /app/templates/
 COPY services/ /app/services/
 COPY static/ /app/static/
-# Por si se copiara igual, lo borramos
-RUN rm -f /app/config.ini || true
 
 # Dependencias
 # - fastapi      → API
@@ -30,11 +28,13 @@ RUN pip install --no-cache-dir \
     Jinja2 \
     psycopg2-binary \
     requests \
-    python-multipart
+    python-multipart\
+    itsdangerous\
+    asyncpg
 
 # Exponemos el puerto
 EXPOSE 80
 
 # Comando de inicio
-CMD ["gunicorn", "main:app", "-k", "uvicorn.workers.UvicornWorker", "-w", "3", "--threads", "2", "--timeout", "15", "--keep-alive", "5", "-b", "0.0.0.0:80"]
+CMD ["gunicorn", "main:app", "-k", "uvicorn.workers.UvicornWorker", "-w", "1", "--threads", "4", "--timeout", "15", "--keep-alive", "5", "-b", "0.0.0.0:80"]
 

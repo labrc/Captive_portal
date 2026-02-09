@@ -41,16 +41,26 @@ def log_error(msg: str):
 session2 = requests.Session()
 session2.verify = False
 session2_csrf = None
+FAIL_COUNT = 0
+MAX_FAIL = 5
+
+
 def _post_retry(session, url, payload, headers=None, retries=2):
     """POST con retry + backoff para máxima estabilidad."""
+    global FAIL_COUNT
     for attempt in range(retries + 1):
         try:
             r = session.post(url, json=payload, headers=headers, timeout=4)
+            # reset conteo si fue bien
+            if r.status_code < 500:
+                FAIL_COUNT = 0
             return r
         except Exception as e:
-            log_error(f"[MODELO2] Error POST intento {attempt+1}/{retries+1}: {e}")
-            time.sleep(0.4)  # backoff suave
+            FAIL_COUNT += 1
+            log_error(f"[POST_RETRY] Error intento {attempt+1}/{retries+1}: {e}")
+            time.sleep(0.4 * (attempt + 1))  # backoff suave
     return None
+
 
 
 def modelo2_login(ctrl, user, pwd):
@@ -181,7 +191,10 @@ def modelo3_unauthorize(ctrl, site, mac):
     headers = {"X-CSRF-Token": session3_csrf}
     payload = {"cmd": "unauthorize-guest", "mac": mac}
 
-    r = session3.post(url, json=payload, headers=headers, timeout=4)
+    r = _post_retry(session3, url, payload, headers=headers)
+    if not r:
+        log_error("[MODELO3] UNAUTH sin respuesta")
+        return False
     log_info(f"[MODELO3] UNAUTH → {r.status_code} {r.text[:200]}")
     return True
 
@@ -263,6 +276,18 @@ def unifi_udm_modelo4(mac, minutes, ctrl, site, user, pwd):
 # DISPATCH GENERAL – FUNCIÓN QUE LLAMA main.py
 # ------------------------------------------------------
 def unifi_guest_approve(client_mac: str, ap_mac: str | None, ssid: str | None):
+    global FAIL_COUNT
+    if FAIL_COUNT >= MAX_FAIL:
+        log_error("Demasiados errores UniFi, reseteando sesiones")
+        session2.cookies.clear()
+        session3.cookies.clear()
+        session4.cookies.clear()
+        # reset CSRFs
+        session2_csrf = None
+        session3_csrf = None
+        session4_csrf = None
+        FAIL_COUNT = 0
+
     if not client_mac:
         log_error("client_mac vacío")
         return False

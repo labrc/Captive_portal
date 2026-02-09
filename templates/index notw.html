@@ -1,0 +1,345 @@
+<!doctype html>
+<html lang="{{ default_language | default('es') }}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Acceso Wi-Fi - {{ hotel_name }}</title>
+
+  <style>
+    :root{
+      --card-bg:#fff;
+      --text:#0f172a;
+      --muted:#64748b;
+      --border:#e2e8f0;
+      --danger-bg:#fee2e2;
+      --danger-text:#991b1b;
+      --btn:#2563eb;
+      --btn-hover:#1d4ed8;
+      --shadow: 0 18px 50px rgba(2, 6, 23, .18);
+      --radius: 18px;
+      --radius-sm: 12px;
+    }
+
+    *{ box-sizing:border-box; }
+    html, body{ height:100%; }
+    body{
+      margin:0;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji";
+      color:var(--text);
+      background: linear-gradient(135deg, #fecaca 0%, #93c5fd 50%, #7dd3fc 100%);
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      padding: 18px;
+    }
+
+    .card{
+      width:100%;
+      max-width: 420px;
+      background: var(--card-bg);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 22px;
+    }
+
+    .logo-wrap{
+      display:flex;
+      justify-content:center;
+      margin-bottom: 10px;
+    }
+    .logo{
+      width: 240px;
+      height: 240px;
+      object-fit: contain;
+      border-radius: 14px;
+      user-select:none;
+      -webkit-user-drag:none;
+    }
+
+    h1{
+      margin: 8px 0 10px;
+      font-size: 20px;
+      font-weight: 700;
+      text-align:center;
+      letter-spacing: .2px;
+    }
+
+    .flags{
+      display:flex;
+      justify-content:center;
+      gap: 10px;
+      margin: 10px 0 12px;
+    }
+    .flag-btn{
+      appearance:none;
+      border: 1px solid var(--border);
+      background: #fff;
+      border-radius: 999px;
+      padding: 8px 12px;
+      cursor:pointer;
+      font-size: 16px;
+      line-height: 1;
+      transition: transform .08s ease, background .2s ease;
+    }
+    .flag-btn:active{ transform: scale(.98); }
+    .flag-btn:hover{ background:#f8fafc; }
+
+    .alert{
+      margin: 10px 0 14px;
+      padding: 10px 12px;
+      border-radius: 12px;
+      font-size: 14px;
+      background: var(--danger-bg);
+      color: var(--danger-text);
+      border: 1px solid rgba(153, 27, 27, .15);
+    }
+
+    form{ margin-top: 10px; }
+    .field{ margin-bottom: 12px; }
+
+    .input{
+      width:100%;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 11px 12px;
+      font-size: 15px;
+      outline: none;
+      background:#fff;
+      transition: border-color .15s ease, box-shadow .15s ease;
+    }
+    .input:focus{
+      border-color: rgba(37, 99, 235, .55);
+      box-shadow: 0 0 0 4px rgba(37, 99, 235, .12);
+    }
+
+    .btn{
+      width:100%;
+      border: none;
+      border-radius: 12px;
+      padding: 12px 14px;
+      font-size: 15px;
+      font-weight: 700;
+      cursor:pointer;
+      color:#fff;
+      background: var(--btn);
+      transition: background .15s ease, transform .08s ease;
+    }
+    .btn:hover{ background: var(--btn-hover); }
+    .btn:active{ transform: scale(.99); }
+
+    /* Overlay */
+    .overlay{
+      position: fixed;
+      inset: 0;
+      display:none;
+      align-items:center;
+      justify-content:center;
+      background: rgba(0,0,0,.40);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      z-index: 9999;
+      padding: 18px;
+    }
+    .overlay.show{ display:flex; }
+
+    .overlay-card{
+      width:100%;
+      max-width: 420px;
+      background:#fff;
+      border-radius: 16px;
+      box-shadow: var(--shadow);
+      padding: 18px 18px 16px;
+      text-align:center;
+    }
+    .overlay-title{
+      font-size: 18px;
+      font-weight: 800;
+      margin: 0 0 6px;
+    }
+    .overlay-p{
+      margin: 0 0 6px;
+      font-size: 14px;
+      color: var(--text);
+    }
+    .overlay-tip{
+      margin: 0;
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    /* Pequeño loader */
+    .spinner{
+      width: 34px;
+      height: 34px;
+      border-radius: 999px;
+      border: 3px solid rgba(15, 23, 42, .15);
+      border-top-color: rgba(37, 99, 235, .95);
+      margin: 0 auto 12px;
+      animation: spin .9s linear infinite;
+    }
+    @keyframes spin{ to { transform: rotate(360deg); } }
+  </style>
+</head>
+
+<body>
+
+  <div id="mainContent" class="card">
+    <div class="logo-wrap">
+      <img
+        class="logo"
+        src="{{ request.url_for('static', path=logo_file) }}"
+        alt="Logo {{ hotel_name }}">
+    </div>
+
+    <h1>{{ hotel_name }}</h1>
+
+    {% if show_language_flags | default('yes') == 'yes' %}
+    <div class="flags" aria-label="Language selector">
+      <button type="button" class="flag-btn" onclick="setLang('es')" title="Español">🇦🇷</button>
+      <button type="button" class="flag-btn" onclick="setLang('en')" title="English">🇺🇸</button>
+      <button type="button" class="flag-btn" onclick="setLang('pt')" title="Português">🇧🇷</button>
+    </div>
+    {% endif %}
+
+    {% if status == "error" %}
+      <div class="alert"><span data-i18n="error_form"></span></div>
+    {% elif status == "error_unifi" %}
+      <div class="alert"><span data-i18n="error_unifi"></span></div>
+    {% endif %}
+
+    <form method="post" id="loginForm" autocomplete="on" novalidate>
+      <div class="field">
+        <input type="text" name="fullname" required class="input"
+          placeholder="" data-i18n-placeholder="fullname">
+      </div>
+
+      <div class="field">
+        <input type="email" name="email" required class="input"
+          placeholder="" data-i18n-placeholder="email">
+      </div>
+
+      <div class="field">
+        <input type="text" name="phone" class="input"
+          placeholder="" data-i18n-placeholder="phone">
+      </div>
+
+      <button type="submit" class="btn">
+        <span data-i18n="connect"></span>
+      </button>
+    </form>
+  </div>
+
+  <!-- Overlay -->
+  <div id="connectingOverlay" class="overlay" role="dialog" aria-modal="true" aria-live="polite">
+    <div class="overlay-card">
+      <div class="spinner" aria-hidden="true"></div>
+      <h2 class="overlay-title" data-i18n="connecting"></h2>
+      <p class="overlay-p" data-i18n="please_wait"></p>
+      <p class="overlay-tip" data-i18n="close_tip"></p>
+    </div>
+  </div>
+
+  <script>
+    /* ------------------ DETECCIÓN ANDROID ------------------ */
+    function isAndroidCaptivePortal() {
+      const ua = navigator.userAgent || "";
+      return ua.includes("CaptivePortalLogin") && ua.includes("Android");
+    }
+
+    function qp(name) {
+      return new URLSearchParams(window.location.search).get(name);
+    }
+
+    /* ------------------ I18N ------------------ */
+    const I18N = {
+      es: {
+        fullname: "Nombre completo",
+        email: "Correo electrónico",
+        phone: "Teléfono (opcional)",
+        connect: "Conectarse",
+        connecting: "Conectando…",
+        please_wait: "Espere por favor",
+        close_tip: "Si tarda demasiado pruebe cerrando el portal de autenticación",
+        error_form: "Por favor complete correctamente el formulario.",
+        error_unifi: "No se pudo autorizar la conexión. Intente nuevamente."
+      },
+      en: {
+        fullname: "Full name",
+        email: "Email address",
+        phone: "Phone (optional)",
+        connect: "Connect",
+        connecting: "Connecting…",
+        please_wait: "Please wait",
+        close_tip: "If it takes too long, try closing the authentication portal",
+        error_form: "Please fill out the form correctly.",
+        error_unifi: "Could not authorize the connection. Please try again."
+      },
+      pt: {
+        fullname: "Nome completo",
+        email: "E-mail",
+        phone: "Telefone (opcional)",
+        connect: "Conectar",
+        connecting: "Conectando…",
+        please_wait: "Aguarde por favor",
+        close_tip: "Se demorar muito, tente fechar o portal de autenticação",
+        error_form: "Por favor, preencha o formulário corretamente.",
+        error_unifi: "Não foi possível autorizar a conexão. Tente novamente."
+      }
+    };
+
+    let currentLang = localStorage.getItem("lang") || "{{ default_language | default('es') }}";
+
+    function applyLang(lang) {
+      currentLang = lang;
+      localStorage.setItem("lang", lang);
+
+      document.documentElement.lang = lang;
+
+      document.querySelectorAll("[data-i18n]").forEach(el => {
+        el.innerHTML = (I18N[lang] && I18N[lang][el.dataset.i18n]) || "";
+      });
+
+      document.querySelectorAll("[data-i18n-placeholder]").forEach(el => {
+        const k = el.dataset.i18nPlaceholder;
+        el.placeholder = (I18N[lang] && I18N[lang][k]) || "";
+      });
+    }
+
+    function setLang(lang) {
+      applyLang(lang);
+    }
+
+    /* ------------------ INIT ------------------ */
+    document.addEventListener("DOMContentLoaded", () => {
+      applyLang(currentLang);
+
+      // Solo si fue login OK
+      if (qp("status") !== "success") return;
+
+      const overlay = document.getElementById("connectingOverlay");
+
+      let target;
+      if (isAndroidCaptivePortal()) {
+        target = qp("url") || qp("continue_url");
+        overlay.classList.add("show");
+      } else {
+        target = "{{ redirect_url }}";
+      }
+
+      if (!target) return;
+
+      const redirectDelayMs = (Number("{{ redirect_delay | default(2) }}") || 2) * 1000;
+
+      setTimeout(() => {
+        window.location.href = target;
+      }, redirectDelayMs);
+
+      // Intentar cerrar portal Android (en muchos casos Android lo ignora, pero no molesta)
+      setTimeout(() => {
+        try { window.close(); } catch(e) {}
+      }, redirectDelayMs + 1000);
+    });
+  </script>
+
+</body>
+</html>

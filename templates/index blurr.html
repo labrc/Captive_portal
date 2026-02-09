@@ -98,26 +98,6 @@
       font-size:15px;
       cursor:pointer;
     }
-    .lang-btn{
-      padding: 6px 12px;              /* px-3 py-1.5 */
-      font-size: 14px;                /* text-sm */
-      line-height: 0.0;
-      border-radius: 90px;          /* rounded-full */
-      border: 0px solid #d1d5db;      /* border-gray-300 */
-      background: #ffffff;
-      color: #111827;                 /* text-gray-900 */
-      cursor: pointer;
-      transition: background-color .15s ease,
-                  transform .05s ease;
-    }
-
-    .lang-btn:hover{
-      background: #f3f4f6;            /* hover:bg-gray-100 */
-    }
-
-    .lang-btn:active{
-      transform: scale(.97);
-    }
 
     /* ================= OVERLAY ================= */
 
@@ -183,9 +163,9 @@
     <h1>{{ hotel_name }}</h1>
 
     <div class="flags">
-      <button class="lang-btn" onclick="setLang('es')">🇦🇷</button>
-      <button class="lang-btn" onclick="setLang('en')">🇺🇸</button>
-      <button class="lang-btn" onclick="setLang('pt')">🇧🇷</button>
+      <button class="flag" onclick="setLang('es')">🇦🇷</button>
+      <button class="flag" onclick="setLang('en')">🇺🇸</button>
+      <button class="flag" onclick="setLang('pt')">🇧🇷</button>
     </div>
 
     <form method="post" id="loginForm">

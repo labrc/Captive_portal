@@ -16,11 +16,26 @@ config.read(CONFIG_PATH)
 
 MAX_RECORDS = int(config["Database"].get("max_records", "500"))
 CLEANUP_ON_EXPORT = config["Database"].get("cleanup_on_export", "yes").lower() == "yes"
-TABLE_NAME = config["Database"].get("table_name", "signups")
+import re
+
+RAW_TABLE_NAME = config["Database"].get("table_name", "signups")
+
+def sanitize_table_name(name: str) -> str:
+    if re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", name):
+        return name
+    return "signups"
+
+TABLE_NAME = sanitize_table_name(RAW_TABLE_NAME)
+
 
 EXPORT_DIR = config["Export"].get("export_dir", "exports")
 DATE_FORMAT = config["Export"].get("date_format", "%Y-%m-%d_%H-%M-%S")
 ABSOLUTE_PATH = config["Export"].get("absolute_export_path", "").strip()
+SEPARADOR_ALTERNATIVO = (
+    config["Export"].get("separador_alternativo", "false").lower() == "true"
+)
+
+CSV_DELIMITER = ";" if SEPARADOR_ALTERNATIVO else ","
 
 # Ruta final donde guardar CSV
 if ABSOLUTE_PATH:
@@ -180,7 +195,7 @@ def log_db_error(msg):
 def generate_csv(rows):
     """Convierte registros a CSV (descarga manual en /admin/export)."""
     output = StringIO()
-    writer = csv.writer(output)
+    writer = csv.writer(output, delimiter=CSV_DELIMITER)
     writer.writerow(["ID", "Nombre", "Email", "Teléfono", "MAC", "IP", "AP MAC", "Fecha"])
 
     for row in rows:
@@ -192,55 +207,75 @@ def generate_csv(rows):
 # 🛡 EXPORTACIÓN SEGURA
 # ------------------------------------------------------
 def safe_export_and_cleanup():
-    rows = db_get_all()
-    if not rows:
-        print("⚠️ No hay registros para exportar.")
-        return None
+    conn = None
+    cur = None
 
     try:
-        # 1) Crear CSV en memoria
+        conn = get_connection()
+        cur = conn.cursor()
+
+        # 1) Lock fuerte
+        cur.execute(f"LOCK TABLE {TABLE_NAME} IN ACCESS EXCLUSIVE MODE")
+
+        cur.execute(f"SELECT * FROM {TABLE_NAME} ORDER BY id DESC")
+        rows = cur.fetchall()
+
+        if not rows:
+            conn.commit()
+            return None
+
+        # 2) CSV en memoria
         mem = StringIO()
-        w = csv.writer(mem)
+        w = csv.writer(mem, delimiter=CSV_DELIMITER)
         w.writerow(["ID", "Nombre", "Email", "Teléfono", "MAC", "IP", "AP MAC", "Fecha"])
+
         for row in rows:
             if len(row) != 8:
                 raise ValueError(f"Fila corrupta: {row}")
             w.writerow(row)
+
         csv_mem = mem.getvalue()
 
-        # 2) Validar CSV en memoria
-        test_mem = list(csv.reader(StringIO(csv_mem)))
+        # 3) Validar CSV
+        test_mem = list(csv.reader(StringIO(csv_mem), delimiter=CSV_DELIMITER))
         if len(test_mem) < 2:
             raise ValueError("CSV vacío o incompleto")
 
-        # 3) Escribir archivo
+        # 4) Escribir archivo
         filename = f"{TABLE_NAME}_{datetime.now().strftime(DATE_FORMAT)}.csv"
         filepath = os.path.join(FINAL_EXPORT_DIR, filename)
+
         with open(filepath, "w", encoding="utf-8", newline="") as f:
             f.write(csv_mem)
 
-        # 4) Verificar archivo leído
+        # 5) Releer y verificar
         with open(filepath, "r", encoding="utf-8") as f:
-            test_disk = list(csv.reader(f))
+            test_disk = list(csv.reader(f, delimiter=CSV_DELIMITER))
 
         if test_disk != test_mem:
             raise ValueError("El CSV escrito difiere del generado en memoria")
 
-        # 5) Todo OK → borrar tabla
-        conn = get_connection()
-        cur = conn.cursor()
+        # 6) BORRADO FINAL (solo si todo OK)
         cur.execute(f"DELETE FROM {TABLE_NAME}")
         conn.commit()
-        cur.close()
-        conn.close()
 
         print(f"🟢 Exportación segura OK → {filepath}")
         return filepath
 
     except Exception as e:
-        print(f"❌ ERROR exportando CSV: {e}")
+        print(f">>>>❌ ERROR exportando CSV: {e}")
         log_db_error(str(e))
+
+        if conn:
+            conn.rollback()
+
         return None
+
+    finally:
+        if cur:
+            cur.close()
+        if conn:
+            conn.close()
 
 # ------------------------------------------------------
 # 🚀 EXPORT AUTOMÁTICO

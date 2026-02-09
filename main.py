@@ -1,18 +1,20 @@
 # ------------------------------------------------------
-# IMPORTS PRINCIPALES
+# IMPORTS PRINCIPALES (NO IMPORTES NADA LOCAL TODAVÍA)
 # ------------------------------------------------------
 import asyncio
 from fastapi import FastAPI, Request, Form, Depends, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
-from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from starlette.status import HTTP_302_FOUND, HTTP_401_UNAUTHORIZED
 import os, configparser
+from fastapi import Cookie
+from itsdangerous import URLSafeSerializer, BadSignature
+from database import TABLE_NAME
+
 
 
 from datetime import datetime
-
+actualver = "1.12.13"
 
 # ------------------------------------------------------
 # FASTAPI APP + CONFIG BÁSICA
@@ -22,6 +24,10 @@ CONFIG_PATH = os.path.join(BASE_DIR, "config.ini")
 
 config = configparser.ConfigParser()
 config.read(CONFIG_PATH)
+
+SECRET_KEY = os.getenv("SECRET_KEY", "ClaveSceretisima")
+serializer = URLSafeSerializer(SECRET_KEY, salt="admin-session")
+
 
 app = FastAPI(title="Captive Portal", version="v2-fastapi-uvicorn")
 
@@ -47,8 +53,6 @@ from database import (
 )
 from database import auto_export_and_cleanup
 
-from services.unifi import unifi_guest_approve
-actualver = "1.12.6"
 # ------------------------------------------------------
 # LOGGING SENCILLO
 # ------------------------------------------------------
@@ -94,26 +98,29 @@ print(
 db_init()
 
 # ------------------------------------------------------
-# AUTH BÁSICA PARA /admin
+# AUTH  PARA /admin
 # ------------------------------------------------------
-security = HTTPBasic()
+def is_admin_logged(session_cookie: str | None) -> bool:
+    if not session_cookie:
+        return False
+    try:
+        data = serializer.loads(session_cookie)
+        return data.get("role") == "admin"
+    except BadSignature:
+        return False
 
 
-def check_admin(credentials: HTTPBasicCredentials = Depends(security)):
-    user_ok = credentials.username == config["Admin"].get("username")
-    pass_ok = credentials.password == config["Admin"].get("password")
-    if not (user_ok and pass_ok):
-        # FastAPI maneja el header WWW-Authenticate
+def require_admin(session_cookie: str | None = Cookie(default=None, alias="admin_session")):
+    if not is_admin_logged(session_cookie):
+        # redirigir a login
         raise HTTPException(
-            status_code=HTTP_401_UNAUTHORIZED,
-            detail="No autorizado",
-            headers={"WWW-Authenticate": 'Basic realm="Login Required"'},
+            status_code=302,
+            headers={"Location": "/login"}
         )
-    return True
 
 
 # ------------------------------------------------------
-# VALIDACIÓN EMAIL
+# VALIDACIÓN EMAIL (igual que antes)
 # ------------------------------------------------------
 import re
 
@@ -132,8 +139,9 @@ async def index(request: Request, status: str | None = None):
     logo_file = config["General"].get("logo_file", "logo.jpg")
     redirect_url = config["Redirect"].get("default_url")
     redirect_delay = int(config["Redirect"].get("redirect_delay", "3"))
+    default_languaje = config["General"].get("default_language")
 
-    # status: None | "success" | "error" | "error_unifi"
+    # status: None | "success" | "error"
     context = {
         "request": request,
         "hotel_name": hotel_name,
@@ -146,7 +154,7 @@ async def index(request: Request, status: str | None = None):
 
 
 # ------------------------------------------------------
-# INDEX (POST) – guarda en DB y autoriza en Unifi
+# INDEX (POST) – guarda en DB
 # ------------------------------------------------------
 @app.post("/", response_class=HTMLResponse)
 async def index_post(
@@ -155,74 +163,33 @@ async def index_post(
     email: str = Form(...),
     phone: str = Form(""),
 ):
-    # Query params UniFi
-    qs = dict(request.query_params)
+    # Query params
 
     if not fullname or not is_valid_email(email):
         # redirigimos con status=error
         url = app.url_path_for("index") + "?status=error"
-        return RedirectResponse(url=url, status_code=HTTP_302_FOUND)
+        return RedirectResponse(url=url, status_code=302)
 
-    signup = {
-        "fullname": fullname.strip(),
-        "email": email.strip(),
-        "phone": phone.strip(),
-        "client_mac": qs.get("id") or qs.get("mac") or "",
-        "client_ip": qs.get("ip", ""),
-        "ap_mac": qs.get("ap") or qs.get("ap_mac") or "",
-    }
 
     # 1) Guardar en DB
     try:
-        await asyncio.to_thread(db_insert_signup, signup)
-    except Exception as e:
-        log_error(f"Error insertando en DB: {e}")
-        url = app.url_path_for("index") + "?status=error"
-        return RedirectResponse(url=url, status_code=HTTP_302_FOUND)
+        await db_insert_signup_async(signup)
+    except Exception:
+        db_init()
+        await db_insert_signup_async(signup)
 
-    # 2) Autorizar en Unifi
-    ok_unifi = False
-    try:
-        ok_unifi = await asyncio.to_thread(
-            unifi_guest_approve,
-            signup["client_mac"],
-            signup["ap_mac"],
-            qs.get("ssid", ""),
-        )
-    except Exception as e:
-        log_error(f"ERROR en unifi_guest_approve: {e}")
-        ok_unifi = False
 
-    status = "success" if ok_unifi else "error_unifi"
+    status = "success"
     url = app.url_path_for("index") + f"?status={status}"
-    return RedirectResponse(url=url, status_code=HTTP_302_FOUND)
+    return RedirectResponse(url=url, status_code=302)
 
-
-# ------------------------------------------------------
-# RUTAS DE CAPTIVE PORTAL UNIFI
-# ------------------------------------------------------
-@app.get("/guest/s/{site}/")
-async def guest_redirect_site(site: str, request: Request):
-    # Mantener query params y redirigir a "/"
-    qs = request.url.query
-    base = app.url_path_for("index")
-    target = f"{base}?{qs}" if qs else base
-    return RedirectResponse(url=target, status_code=HTTP_302_FOUND)
-
-
-@app.get("/guest/s/default/")
-async def guest_redirect_default(request: Request):
-    qs = request.url.query
-    base = app.url_path_for("index")
-    target = f"{base}?{qs}" if qs else base
-    return RedirectResponse(url=target, status_code=HTTP_302_FOUND)
 
 
 # ------------------------------------------------------
 # ADMIN PANEL
 # ------------------------------------------------------
 @app.get("/admin", response_class=HTMLResponse)
-async def admin_panel(request: Request, _: bool = Depends(check_admin)):
+async def admin_panel(request: Request, _: bool = Depends(require_admin)):
     registros = db_get_all()
     # admin.html ya espera 'registros' y usa request para el link CSV :contentReference[oaicite:1]{index=1}
     return templates.TemplateResponse(
@@ -233,12 +200,102 @@ async def admin_panel(request: Request, _: bool = Depends(check_admin)):
         },
     )
 
+from fastapi.responses import HTMLResponse, RedirectResponse
+
+@app.get("/login", response_class=HTMLResponse)
+async def login_form(request: Request):
+    return templates.TemplateResponse(
+        "login.html",
+        {
+            "request": request,
+            "hotel_name": config["General"].get("hotel_name", "Portal Wi-Fi"),
+        },
+    )
+
+@app.post("/login")
+async def login_action(
+    request: Request,
+    username: str = Form(...),
+    password: str = Form(...)
+):
+    cfg_user = config["Admin"].get("username")
+    cfg_pass = config["Admin"].get("password")
+
+    if username == cfg_user and password == cfg_pass:
+        token = serializer.dumps({"role": "admin", "user": username})
+        resp = RedirectResponse(url="/admin", status_code=302)
+        # Cookie segura (en HTTP local podés dejar secure=False)
+        resp.set_cookie(
+            "admin_session",
+            token,
+            httponly=True,
+            samesite="Lax",
+            max_age=8 * 3600,
+        )
+        return resp
+
+    # Login incorrecto
+    return templates.TemplateResponse(
+        "login.html",
+        {
+            "request": request,
+            "hotel_name": config["General"].get("hotel_name", "Portal Wi-Fi"),
+            "error": "Usuario o contraseña incorrectos",
+        },
+        status_code=401
+    )
+
+
+@app.get("/logout")
+async def logout():
+    resp = RedirectResponse(url="/login", status_code=302)
+    resp.delete_cookie("admin_session")
+    return resp
+
+# ------------------------------------------------------
+# DB nueva
+# ------------------------------------------------------
+import asyncpg
+
+db_pool: asyncpg.Pool | None = None
+
+@app.on_event("startup")
+async def startup_event():
+    global db_pool
+    db_pool = await asyncpg.create_pool(
+        host=os.getenv("DB_HOST", "db"),
+        port=int(os.getenv("DB_PORT", "5432")),
+        user=os.getenv("DB_USER", "portal"),
+        password=os.getenv("DB_PASS", "portal123"),
+        database=os.getenv("DB_NAME", "captive_portal"),
+        min_size=1,
+        max_size=5,
+    )
+
+async def db_insert_signup_async(data: dict):
+    global db_pool
+    if db_pool is None:
+        # fallback por si algo falla
+        return await asyncio.to_thread(db_insert_signup, data)
+
+    async with db_pool.acquire() as conn:
+        await conn.execute(f"""
+            INSERT INTO {TABLE_NAME} (fullname, email, phone, client_mac, client_ip, ap_mac)
+            VALUES ($1, $2, $3, $4, $5, $6)
+        """,
+        data["fullname"],
+        data["email"],
+        data.get("phone", ""),
+        data.get("client_mac", ""),
+        data.get("client_ip", ""),
+        data.get("ap_mac", "")
+        )
 
 # ------------------------------------------------------
 # EXPORT CSV
 # ------------------------------------------------------
 @app.get("/admin/export")
-async def export_csv(_: bool = Depends(check_admin)):
+async def export_csv(_: bool = Depends(require_admin)):
     if CLEANUP_ON_EXPORT:
         filepath = safe_export_and_cleanup()
         if not filepath:
@@ -264,51 +321,6 @@ async def export_csv(_: bool = Depends(check_admin)):
             },
         )
 
-@app.get("/test")
-async def test_unifi(mac: str = ""):
-    if not mac:
-        return {"error": "Falta ?mac=AA:BB:CC:DD:EE:FF"}
-
-    try:
-        ok = await asyncio.to_thread(unifi_guest_approve, mac, "", "")
-        return {
-            "mac": mac,
-            "authorized": ok
-        }
-    except Exception as e:
-        return {
-            "mac": mac,
-            "authorized": False,
-            "error": str(e)
-        }
-from fastapi.responses import Response
-
-# ------------------------------------------------------
-# RUTAS PARA COMPATIBILIDAD PORTAL CAUTIVO
-# ------------------------------------------------------
-
-@app.get("/generate_204")
-@app.get("/generate_204/")   # por las dudas
-async def android_generate_204():
-    return Response("", status_code=204)
-
-@app.get("/hotspot-detect.html")
-async def apple_hotspot_detect():
-    # iOS a veces interpreta 200 OK HTML como portal
-    return Response("", status_code=204)
-
-@app.get("/connecttest.txt")
-async def windows_connecttest():
-    return Response("", status_code=204)
-
-@app.get("/ncsi.txt")
-async def windows_ncsi():
-    return Response("", status_code=204)
-
-@app.get("/fwlink")
-async def windows_fwlink():
-    # Windows redirige acá cuando detecta cpt portal
-    return Response("", status_code=204)
 
 # ------------------------------------------------------
 # MAIN
